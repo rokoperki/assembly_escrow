@@ -68,13 +68,8 @@
 
 entrypoint:
     ; ── find ix_data by walking accounts dynamically ──────
-    ; stride(data_len) = 96 + align8(data_len + 10240)
-    ; where align8(n) = (n + 7) & ~7
-    ;
-    ; r6 = num_accounts (counter)
-    ; r7 = walking pointer (account base)
-    ; r8 = r1 (saved input buffer base)
-    mov64 r8, r1
+    ; stride(d) = 96 + align8(d + 10240), where align8(n) = (n+7) & ~7
+    ; r6 = num_accounts counter, r7 = current account ptr, r9 = save index
     ldxdw r6, [r1 + 0]         ; r6 = num_accounts
     mov64 r7, r1
     add64 r7, 8                ; r7 = first account base
@@ -82,22 +77,22 @@ entrypoint:
 find_ix_data_loop:
     jeq   r6, 0, find_ix_data_done
 
-    ; save current account ptr: [r10 - 8 - r9*8]
+    ; save current account ptr at stack[r9] = [r10 - 8 - r9*8]
     mov64 r3, r9
     lsh64 r3, 3                ; r3 = r9 * 8
     mov64 r2, r10
     sub64 r2, 8
     sub64 r2, r3
-    stxdw [r2 + 0], r7         ; stack[r9] = current account base
+    stxdw [r2 + 0], r7         ; stack[r9] = account base
     add64 r9, 1
 
-    ldxdw r2, [r7 + ACCT_DLEN] ; r2 = this account's data_len
-    add64 r2, 10240            ; r2 = data_len + MAX_PERMITTED_DATA_INCREASE
-    add64 r2, 7                ; prepare ceiling-align to 8
+    ldxdw r2, [r7 + ACCT_DLEN] ; r2 = data_len
+    add64 r2, 10240            ; + MAX_PERMITTED_DATA_INCREASE
+    add64 r2, 7                ; prepare ceiling-align
     mov64 r3, r2
     and64 r3, 7                ; r3 = low 3 bits
-    sub64 r2, r3               ; r2 = align8(data_len + 10240)
-    add64 r2, 96               ; + 88 fixed fields + 8 rent = 96
+    sub64 r2, r3               ; align8(dlen + 10240)
+    add64 r2, 96               ; + 88 fixed fields + 8 rent
     add64 r7, r2               ; advance to next account base
     sub64 r6, 1
     ja    find_ix_data_loop
@@ -106,7 +101,7 @@ find_ix_data_done:
     ldxdw r3, [r7 + 0]
     jlt   r3, 1, error_invalid_ix
 
-    ldxb  r4, [r7 + 8]         ; r4 = discriminator
+    ldxb  r4, [r7 + 8]         ; discriminator
 
     jeq   r4, IX_MAKE_OFFER,   make_offer
     jeq   r4, IX_TAKE_OFFER,   take_offer
@@ -114,275 +109,273 @@ find_ix_data_done:
     ja    error_invalid_ix
 
 make_offer:
-    ;account len check
+    ; account count >= 7
     ldxdw r2, [r1 + NUM_ACCOUNTS]
     jlt r2, 7, error_wrong_accounts_number
 
-    ;maker is_signer check
-    ldxdw r2, [r10 - 8]       ; acc0 base
+    ; maker (acct0) is signer
+    ldxdw r2, [r10 - 8]
     ldxb r2, [r2 + ACCT_IS_SIGNER]
     jne r2, 1, error_no_signer
 
-    ;escrow.owner == program_id check
-    ldxdw r3, [r7 + 0]          ;ix data len
-    mov64 r2, r7
-    add64 r2, 8
-    add64 r2, r3                ;&program_id
+    ; escrow.owner == program_id
+    ldxdw r3, [r7 + 0]
+    mov64 r1, r7
+    add64 r1, 8
+    add64 r1, r3               ; r1 = &program_id
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_OWNER       ; r2 = &escrow.owner
+    call cmp32
+    jne r0, 0, error_escrow_owner
 
-    ldxdw r3, [r10 - 32]
-    add64 r3, ACCT_OWNER        ; r3 = &escrow.owner
-
-    ldxdw r4, [r2 + 0]
-    ldxdw r5, [r3 + 0]
-    jne r4, r5, error_escrow_owner
-    ldxdw r4, [r2 + 8]
-    ldxdw r5, [r3 + 8]
-    jne r4, r5, error_escrow_owner
-    ldxdw r4, [r2 + 16]
-    ldxdw r5, [r3 + 16]
-    jne r4, r5, error_escrow_owner
-    ldxdw r4, [r2 + 24]
-    ldxdw r5, [r3 + 24]
-    jne r4, r5, error_escrow_owner
-
-    ;check escrow is fresh
+    ; escrow state == Active (fresh)
     ldxdw r2, [r10 - 32]
     add64 r2, ACCT_DATA
     ldxb r3, [r2 + ES_STATE]
     jne r3, 0, error_es_state_not_fresh
 
-    ; ix_data at r7+8: [disc:1, bump:1, nonce:8, a_amount:8, b_amount:8]
-    ldxb r2, [r7 + 9]
-    stxb [r10 - 81], r2         ;bump
-    ldxdw r2, [r7 + 10]
-    stxdw [r10 - 80], r2        ;nonce
+    ; escrow dlen == ES_SIZE
+    ldxdw r2, [r10 - 32]
+    ldxdw r2, [r2 + ACCT_DLEN]
+    jne r2, ES_SIZE, error_escrow_size
+
+    ; a_amount > 0
     ldxdw r2, [r7 + 18]
-    stxdw [r10 - 64], r2        ; a_amount
+    jeq r2, 0, error_invalid_amount
+
+    ; maker_ata_a.owner == maker.key
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_OWNER
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY
+    call cmp32
+    jne r0, 0, error_maker_ata_owner
+
+    ; maker_ata_a.mint == mint_a.key
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA        ; TOKEN_ACCT_MINT=0
+    ldxdw r2, [r10 - 40]
+    add64 r2, ACCT_KEY
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; vault_ata.mint == mint_a.key
+    ldxdw r1, [r10 - 24]
+    add64 r1, ACCT_DATA
+    ldxdw r2, [r10 - 40]
+    add64 r2, ACCT_KEY
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; ── save ix_data to stack ─────────────────────────
+    ; ix_data layout: [disc:1, bump:1, nonce:8, a_amount:8, b_amount:8]
+    ldxb r2, [r7 + 9]
+    stxb [r10 - 81], r2        ; bump
+    ldxdw r2, [r7 + 10]
+    stxdw [r10 - 80], r2       ; nonce
+    ldxdw r2, [r7 + 18]
+    stxdw [r10 - 64], r2       ; a_amount
     ldxdw r2, [r7 + 26]
-    stxdw [r10 - 72], r2        ; b_amount
+    stxdw [r10 - 72], r2       ; b_amount
 
-    ;build CPI ix data
+    ; ── CPI: SPL Token Transfer(maker_ata_a → vault_ata, authority=maker) ──
+    ; stack layout (all 8-byte aligned):
+    ;   r10-104 : ix_data [disc:1, amount:8]
+    ;   r10-152 : meta[0..2]  (16 bytes each)
+    ;   r10-208 : SolInstruction
+    ;   r10-384 : SolAccountInfo[0..2]  (56 bytes each)
+
+    ; ix data [disc:1, amount:8]
     mov64 r2, TOKEN_TRANSFER_DISC
-    stxb [r10 - 104], r2
-    ldxdw r2, [r10 - 64]        ;a_amount
+    stxb  [r10 - 104], r2
+    ldxdw r2, [r10 - 64]       ; a_amount
     stxdw [r10 - 103], r2
-
-    ;build SolAccMeta on stack
 
     ; meta[0] maker_ata_a {key_ptr, writable=1, signer=0}
     ldxdw r2, [r10 - 16]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 152], r2
+    stxdw [r10 - 152], r2      ; key_ptr
     mov64 r2, 1
-    stxb [r10 - 144], r2         ; is_writable
+    stxb  [r10 - 144], r2      ; is_writable
     mov64 r2, 0
-    stxb [r10 - 143], r2         ; is_signer
+    stxb  [r10 - 143], r2      ; is_signer
 
     ; meta[1] vault_ata {key_ptr, writable=1, signer=0}
     ldxdw r2, [r10 - 24]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 136], r2
+    stxdw [r10 - 136], r2      ; key_ptr
     mov64 r2, 1
-    stxb  [r10 - 128], r2
+    stxb  [r10 - 128], r2      ; is_writable
     mov64 r2, 0
-    stxb  [r10 - 127], r2
+    stxb  [r10 - 127], r2      ; is_signer
 
     ; meta[2] maker {key_ptr, writable=0, signer=1}
     ldxdw r2, [r10 - 8]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 120], r2
+    stxdw [r10 - 120], r2      ; key_ptr
     mov64 r2, 0
-    stxb  [r10 - 112], r2
+    stxb  [r10 - 112], r2      ; is_writable
     mov64 r2, 1
-    stxb  [r10 - 111], r2
+    stxb  [r10 - 111], r2      ; is_signer
 
-    ; build solInstruction on stack
+    ; SolInstruction
     ldxdw r2, [r10 - 56]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 208], r2         ;token_program ptr
-
+    stxdw [r10 - 208], r2      ; program_id ptr (token_program, acct6)
     mov64 r2, r10
     sub64 r2, 152
-    stxdw [r10 - 200], r2           ;metas ptr → meta[0] at r10-152
-
+    stxdw [r10 - 200], r2      ; accounts_ptr → meta[0] at r10-152
     mov64 r2, 3
-    stxdw [r10 - 192], r2           ;num accounts
-
+    stxdw [r10 - 192], r2      ; accounts_len
     mov64 r2, r10
     sub64 r2, 104
-    stxdw [r10 - 184], r2           ;data ptr → ix_data at r10-104
-
+    stxdw [r10 - 184], r2      ; data_ptr → ix_data at r10-104
     mov64 r2, 9
-    stxdw [r10 - 176], r2            ;ix data_len
+    stxdw [r10 - 176], r2      ; data_len
 
-    ; build solAccountInfos on stack
-
-    ; info[0] = maker_ata_a (acct1)
+    ; SolAccountInfo[0] = maker_ata_a (acct1)
     ldxdw r2, [r10 - 16]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 384 + 0], r2       ;key ptr
+    stxdw [r10 - 384 + 0], r2  ; key ptr
     ldxdw r2, [r10 - 16]
     add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 384 + 8], r2       ;lamports ptr
+    stxdw [r10 - 384 + 8], r2  ; lamports ptr
     ldxdw r2, [r10 - 16]
     ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 384 + 16], r3      ;data_len value
+    stxdw [r10 - 384 + 16], r3 ; data_len value
     ldxdw r2, [r10 - 16]
     add64 r2, ACCT_DATA
-    stxdw [r10 - 384 + 24], r2      ;data ptr
+    stxdw [r10 - 384 + 24], r2 ; data ptr
     ldxdw r2, [r10 - 16]
     add64 r2, ACCT_OWNER
-    stxdw [r10 - 384 + 32], r2      ;owner ptr
+    stxdw [r10 - 384 + 32], r2 ; owner ptr
     ldxdw r2, [r10 - 24]
     ldxdw r3, [r2 - 8]
-    stxdw [r10 - 384 + 40], r3      ;rent_epoch value
+    stxdw [r10 - 384 + 40], r3 ; rent_epoch (acct2_base - 8)
     mov64 r2, 0
-    stxb  [r10 - 384 + 48], r2      ;is_signer=0
+    stxb  [r10 - 384 + 48], r2 ; is_signer=0
     mov64 r2, 1
-    stxb  [r10 - 384 + 49], r2      ;is_writable=1
+    stxb  [r10 - 384 + 49], r2 ; is_writable=1
     mov64 r2, 0
-    stxb  [r10 - 384 + 50], r2      ;is_executable=0
+    stxb  [r10 - 384 + 50], r2 ; is_executable=0
 
-    ; info[1] = vault_ata (acct2)
+    ; SolAccountInfo[1] = vault_ata (acct2)
     ldxdw r2, [r10 - 24]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 328 + 0], r2       ;key ptr
+    stxdw [r10 - 328 + 0], r2  ; key ptr
     ldxdw r2, [r10 - 24]
     add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 328 + 8], r2       ;lamports ptr
+    stxdw [r10 - 328 + 8], r2  ; lamports ptr
     ldxdw r2, [r10 - 24]
     ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 328 + 16], r3      ;data_len value
+    stxdw [r10 - 328 + 16], r3 ; data_len value
     ldxdw r2, [r10 - 24]
     add64 r2, ACCT_DATA
-    stxdw [r10 - 328 + 24], r2      ;data ptr
+    stxdw [r10 - 328 + 24], r2 ; data ptr
     ldxdw r2, [r10 - 24]
     add64 r2, ACCT_OWNER
-    stxdw [r10 - 328 + 32], r2      ;owner ptr
+    stxdw [r10 - 328 + 32], r2 ; owner ptr
     ldxdw r2, [r10 - 32]
     ldxdw r3, [r2 - 8]
-    stxdw [r10 - 328 + 40], r3      ;rent_epoch (acct3_base - 8)
+    stxdw [r10 - 328 + 40], r3 ; rent_epoch (acct3_base - 8)
     mov64 r2, 0
-    stxb  [r10 - 328 + 48], r2      ;is_signer=0
+    stxb  [r10 - 328 + 48], r2 ; is_signer=0
     mov64 r2, 1
-    stxb  [r10 - 328 + 49], r2      ;is_writable=1
+    stxb  [r10 - 328 + 49], r2 ; is_writable=1
     mov64 r2, 0
-    stxb  [r10 - 328 + 50], r2      ;is_executable=0
+    stxb  [r10 - 328 + 50], r2 ; is_executable=0
 
-    ; info[2] = maker (acct0, authority)
+    ; SolAccountInfo[2] = maker (acct0, authority)
     ldxdw r2, [r10 - 8]
     add64 r2, ACCT_KEY
-    stxdw [r10 - 272 + 0], r2       ;key ptr
+    stxdw [r10 - 272 + 0], r2  ; key ptr
     ldxdw r2, [r10 - 8]
     add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 272 + 8], r2       ;lamports ptr
+    stxdw [r10 - 272 + 8], r2  ; lamports ptr
     ldxdw r2, [r10 - 8]
     ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 272 + 16], r3      ;data_len value
+    stxdw [r10 - 272 + 16], r3 ; data_len value
     ldxdw r2, [r10 - 8]
     add64 r2, ACCT_DATA
-    stxdw [r10 - 272 + 24], r2      ;data ptr
+    stxdw [r10 - 272 + 24], r2 ; data ptr
     ldxdw r2, [r10 - 8]
     add64 r2, ACCT_OWNER
-    stxdw [r10 - 272 + 32], r2      ;owner ptr
+    stxdw [r10 - 272 + 32], r2 ; owner ptr
     ldxdw r2, [r10 - 16]
     ldxdw r3, [r2 - 8]
-    stxdw [r10 - 272 + 40], r3      ;rent_epoch (acct1_base - 8)
+    stxdw [r10 - 272 + 40], r3 ; rent_epoch (acct1_base - 8)
     mov64 r2, 1
-    stxb  [r10 - 272 + 48], r2      ;is_signer=1
+    stxb  [r10 - 272 + 48], r2 ; is_signer=1
     mov64 r2, 1
-    stxb  [r10 - 272 + 49], r2      ;is_writable=1
+    stxb  [r10 - 272 + 49], r2 ; is_writable=1
     mov64 r2, 0
-    stxb  [r10 - 272 + 50], r2      ;is_executable=0
+    stxb  [r10 - 272 + 50], r2 ; is_executable=0
 
     ; CPI call
     mov64 r1, r10
-    sub64 r1, 208                   ; &solInstruction
+    sub64 r1, 208              ; &SolInstruction  (208%8=0 ✓)
     mov64 r2, r10
-    sub64 r2, 384                   ; &solAccountInfo[0]
+    sub64 r2, 384              ; &SolAccountInfo[0]  (384%8=0 ✓)
     mov64 r3, 3
     mov64 r4, 0
     mov64 r5, 0
     call sol_invoke_signed_c
     jne r0, 0, error_cpi_failed
 
-    ;write escrow state
-    ; acct3 = escrow (r10-32), acct4 = mint_a (r10-40), acct5 = mint_b (r10-48)
+    ; ── write escrow state ────────────────────────────
     ldxdw r6, [r10 - 32]
-    add64 r6, ACCT_DATA            ; r6 = &escrow.data[0]
+    add64 r6, ACCT_DATA        ; r6 = &escrow.data[0], preserved across copy32 calls
 
     mov64 r2, STATE_ACTIVE
-    stxb [r6 + ES_STATE], r2
-
-    ldxb r2, [r10 - 81]
-    stxb [r6 + ES_BUMP], r2
-
+    stxb  [r6 + ES_STATE], r2   ; state = Active
+    ldxb  r2, [r10 - 81]
+    stxb  [r6 + ES_BUMP], r2    ; bump
     ldxdw r2, [r10 - 80]
-    stxdw [r6 + ES_NONCE], r2
+    stxdw [r6 + ES_NONCE], r2   ; nonce
+    ldxdw r2, [r10 - 64]
+    stxdw [r6 + ES_AMOUNT_A], r2 ; amount_a
+    ldxdw r2, [r10 - 72]
+    stxdw [r6 + ES_AMOUNT_B], r2 ; amount_b
 
     ; ES_MAKER = acct0.key
-    ldxdw r5, [r10 - 8]
-    add64 r5, ACCT_KEY
-    ldxdw r2, [r5 + 0]
-    stxdw [r6 + ES_MAKER + 0], r2
-    ldxdw r2, [r5 + 8]
-    stxdw [r6 + ES_MAKER + 8], r2
-    ldxdw r2, [r5 + 16]
-    stxdw [r6 + ES_MAKER + 16], r2
-    ldxdw r2, [r5 + 24]
-    stxdw [r6 + ES_MAKER + 24], r2
+    mov64 r1, r6
+    add64 r1, ES_MAKER
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY
+    call copy32
 
     ; ES_MINT_A = acct4.key
-    ldxdw r5, [r10 - 40]
-    add64 r5, ACCT_KEY
-    ldxdw r2, [r5 + 0]
-    stxdw [r6 + ES_MINT_A + 0], r2
-    ldxdw r2, [r5 + 8]
-    stxdw [r6 + ES_MINT_A + 8], r2
-    ldxdw r2, [r5 + 16]
-    stxdw [r6 + ES_MINT_A + 16], r2
-    ldxdw r2, [r5 + 24]
-    stxdw [r6 + ES_MINT_A + 24], r2
+    mov64 r1, r6
+    add64 r1, ES_MINT_A
+    ldxdw r2, [r10 - 40]
+    add64 r2, ACCT_KEY
+    call copy32
 
     ; ES_MINT_B = acct5.key
-    ldxdw r5, [r10 - 48]
-    add64 r5, ACCT_KEY
-    ldxdw r2, [r5 + 0]
-    stxdw [r6 + ES_MINT_B + 0], r2
-    ldxdw r2, [r5 + 8]
-    stxdw [r6 + ES_MINT_B + 8], r2
-    ldxdw r2, [r5 + 16]
-    stxdw [r6 + ES_MINT_B + 16], r2
-    ldxdw r2, [r5 + 24]
-    stxdw [r6 + ES_MINT_B + 24], r2
+    mov64 r1, r6
+    add64 r1, ES_MINT_B
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_KEY
+    call copy32
 
-    ; ES_AMOUNT_A, ES_AMOUNT_B
-    ldxdw r2, [r10 - 64]
-    stxdw [r6 + ES_AMOUNT_A], r2
-    ldxdw r2, [r10 - 72]
-    stxdw [r6 + ES_AMOUNT_B], r2
+    ; ES_VAULT_ATA = acct2.key
+    mov64 r1, r6
+    add64 r1, ES_VAULT_ATA
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_KEY
+    call copy32
 
-    ; ES_VAULT_ATA = acct2.key (vault_ata)
-    ldxdw r5, [r10 - 24]
-    add64 r5, ACCT_KEY
-    ldxdw r2, [r5 + 0]
-    stxdw [r6 + ES_VAULT_ATA + 0], r2
-    ldxdw r2, [r5 + 8]
-    stxdw [r6 + ES_VAULT_ATA + 8], r2
-    ldxdw r2, [r5 + 16]
-    stxdw [r6 + ES_VAULT_ATA + 16], r2
-    ldxdw r2, [r5 + 24]
-    stxdw [r6 + ES_VAULT_ATA + 24], r2
-
+    mov64 r0, 0
     exit
 
 take_offer:
-  ldxdw r2, [r1 + NUM_ACCOUNTS]
-  exit
+    ldxdw r2, [r1 + NUM_ACCOUNTS]
+    exit
 
 cancel_offer:
-  ldxdw r2, [r1 + NUM_ACCOUNTS]
-  exit
+    ldxdw r2, [r1 + NUM_ACCOUNTS]
+    exit
 
 error_invalid_ix:
     mov64 r0, 0x01
@@ -406,4 +399,54 @@ error_es_state_not_fresh:
 
 error_cpi_failed:
     mov64 r0, 0x06
+    exit
+
+error_escrow_size:
+    mov64 r0, 0x07
+    exit
+
+error_invalid_amount:
+    mov64 r0, 0x08
+    exit
+
+error_maker_ata_owner:
+    mov64 r0, 0x09
+    exit
+
+error_mint_mismatch:
+    mov64 r0, 0x0A
+    exit
+
+; ── Helpers ───────────────────────────────────────────
+; cmp32: r1=ptr_a, r2=ptr_b → r0=0 equal, r0=1 not-equal
+; clobbers r3, r4
+cmp32:
+    ldxdw r3, [r1 + 0]
+    ldxdw r4, [r2 + 0]
+    jne r3, r4, cmp32_ne
+    ldxdw r3, [r1 + 8]
+    ldxdw r4, [r2 + 8]
+    jne r3, r4, cmp32_ne
+    ldxdw r3, [r1 + 16]
+    ldxdw r4, [r2 + 16]
+    jne r3, r4, cmp32_ne
+    ldxdw r3, [r1 + 24]
+    ldxdw r4, [r2 + 24]
+    jne r3, r4, cmp32_ne
+    mov64 r0, 0
+    exit
+cmp32_ne:
+    mov64 r0, 1
+    exit
+
+; copy32: r1=dst, r2=src — clobbers r3
+copy32:
+    ldxdw r3, [r2 + 0]
+    stxdw [r1 + 0], r3
+    ldxdw r3, [r2 + 8]
+    stxdw [r1 + 8], r3
+    ldxdw r3, [r2 + 16]
+    stxdw [r1 + 16], r3
+    ldxdw r3, [r2 + 24]
+    stxdw [r1 + 24], r3
     exit
