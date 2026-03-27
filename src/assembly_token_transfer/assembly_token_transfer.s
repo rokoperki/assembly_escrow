@@ -81,6 +81,16 @@ entrypoint:
 
 find_ix_data_loop:
     jeq   r6, 0, find_ix_data_done
+
+    ; save current account ptr: [r10 - 8 - r9*8]
+    mov64 r3, r9
+    lsh64 r3, 3                ; r3 = r9 * 8
+    mov64 r2, r10
+    sub64 r2, 8
+    sub64 r2, r3
+    stxdw [r2 + 0], r7         ; stack[r9] = current account base
+    add64 r9, 1
+
     ldxdw r2, [r7 + ACCT_DLEN] ; r2 = this account's data_len
     add64 r2, 10240            ; r2 = data_len + MAX_PERMITTED_DATA_INCREASE
     add64 r2, 7                ; prepare ceiling-align to 8
@@ -104,8 +114,55 @@ find_ix_data_done:
     ja    error_invalid_ix
 
 make_offer:
-  ldxdw r2, [r1 + NUM_ACCOUNTS]
-  exit
+    ;account len check
+    ldxdw r2, [r1 + NUM_ACCOUNTS]
+    jlt r2, 7, error_wrong_accounts_number
+
+    ;maker is_signer check
+    ldxdw r2, [r10 - 8]       ; acc0 base
+    ldxb r2, [r2 + ACCT_IS_SIGNER]
+    jne r2, 1, error_no_signer
+
+    ;escrow.owner == program_id check
+    ldxdw r3, [r7 + 0]          ;ix data len
+    mov64 r2, r7
+    add64 r2, 8
+    add64 r2, r3                ;&program_id
+
+    ldxdw r3, [r10 - 32]
+    add64 r3, ACCT_OWNER        ; r3 = &escrow.owner
+
+    ldxdw r4, [r2 + 0]
+    ldxdw r5, [r3 + 0]
+    jne r4, r5, error_escrow_owner
+    ldxdw r4, [r2 + 8]
+    ldxdw r5, [r3 + 8]
+    jne r4, r5, error_escrow_owner
+    ldxdw r4, [r2 + 16]
+    ldxdw r5, [r3 + 16]
+    jne r4, r5, error_escrow_owner
+    ldxdw r4, [r2 + 24]
+    ldxdw r5, [r3 + 24]
+    jne r4, r5, error_escrow_owner
+
+    ;check escrow is fresh
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    ldxb r3, [r2 + ES_STATE]
+    jne r3, 0, error_es_state_not_fresh
+
+    ; ix_data at r7+8: [disc:1, bump:1, nonce:8, a_amount:8, b_amount:8]
+    ldxb r2, [r7 + 9]
+    stxb [r10 - 81], r2         ;bump
+    ldxdw r2, [r7 + 10]
+    stxdw [r10 - 80], r2        ;nonce
+    ldxdw r2, [r7 + 18]
+    stxdw [r10 - 64], r2        ; a_amount
+    ldxdw r2, [r7 + 26]
+    stxdw [r10 - 72], r2        ; b_amount
+
+
+    exit
 
 take_offer:
   ldxdw r2, [r1 + NUM_ACCOUNTS]
@@ -117,4 +174,20 @@ cancel_offer:
 
 error_invalid_ix:
     mov64 r0, 0x01
+    exit
+
+error_wrong_accounts_number:
+    mov64 r0, 0x02
+    exit
+
+error_no_signer:
+    mov64 r0, 0x03
+    exit
+
+error_escrow_owner:
+    mov64 r0, 0x04
+    exit
+
+error_es_state_not_fresh:
+    mov64 r0, 0x05
     exit
