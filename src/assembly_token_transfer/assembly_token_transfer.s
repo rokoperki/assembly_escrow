@@ -428,6 +428,181 @@ take_offer:
     call cmp32
     jne r0, 0, error_vault_ata_mismatch
 
+    ; maker_ata_b.owner == escrow.maker
+    ldxdw r1, [r10 - 24]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_OWNER      ; r1 = &maker_ata_b.owner
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MAKER              ; r2 = &escrow.maker
+    call cmp32
+    jne r0, 0, error_maker_atab_owner
+
+    ; maker_ata_b.mint == escrow.mint_b
+    ldxdw r1, [r10 - 24]
+    add64 r1, ACCT_DATA             ; TOKEN_ACCT_MINT=0
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MINT_B             ; r2 = &escrow.mint_b
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; taker_ata_a.mint == escrow.mint_a
+    ldxdw r1, [r10 - 40]
+    add64 r1, ACCT_DATA             ; TOKEN_ACCT_MINT=0
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MINT_A             ; r2 = &escrow.mint_a
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; taker_ata_a.owner == taker.key
+    ldxdw r1, [r10 - 40]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_OWNER      ; r1 = &taker_ata_a.owner
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY              ; r2 = &taker.key
+    call cmp32
+    jne r0, 0, error_taker_ata_owner
+
+    ; ix data [disc:1, amount:8]
+    mov64 r2, TOKEN_TRANSFER_DISC
+    stxb  [r10 - 82], r2
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    ldxdw r2, [r2 + ES_AMOUNT_B]
+    stxdw [r10 - 81], r2            ; b_amount
+
+    ; meta[0] taker_ata_b {key_ptr, writable=1, signer=0}
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 128], r2      ; key_ptr
+    mov64 r2, 1
+    stxb  [r10 - 120], r2      ; is_writable
+    mov64 r2, 0
+    stxb  [r10 - 119], r2      ; is_signer
+
+    ; meta[1] maker_ata_b {key_ptr, writable=1, signer=0}
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 112], r2      ; key_ptr
+    mov64 r2, 1
+    stxb  [r10 - 104], r2      ; is_writable
+    mov64 r2, 0
+    stxb  [r10 - 103], r2      ; is_signer
+
+    ; meta[2] taker {key_ptr, writable=0, signer=1}
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 96], r2      ; key_ptr
+    mov64 r2, 0
+    stxb  [r10 - 88], r2      ; is_writable
+    mov64 r2, 1
+    stxb  [r10 - 87], r2      ; is_signer
+
+    ; SolInstruction
+    ldxdw r2, [r10 - 72]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 184], r2      ; program_id ptr (token_program, acct8)
+    mov64 r2, r10
+    sub64 r2, 128
+    stxdw [r10 - 176], r2      ; accounts_ptr → meta[0] at r10-152
+    mov64 r2, 3
+    stxdw [r10 - 168], r2      ; accounts_len
+    mov64 r2, r10
+    sub64 r2, 82
+    stxdw [r10 - 160], r2      ; data_ptr → ix_data at r10-82
+    mov64 r2, 9
+    stxdw [r10 - 152], r2      ; data_len
+
+    ; SolAccountInfo[0] = taker_ata_b (acct1)
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 360 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 360 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 16]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 360 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 360 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 360 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 24]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 360 + 40], r3 ; rent_epoch (acct2_base - 8)
+    mov64 r2, 0
+    stxb  [r10 - 360 + 48], r2 ; is_signer=0
+    mov64 r2, 1
+    stxb  [r10 - 360 + 49], r2 ; is_writable=1
+    mov64 r2, 0
+    stxb  [r10 - 360 + 50], r2 ; is_executable=0
+
+    ; SolAccountInfo[1] = maker_ata_b (acct2)
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 304 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 304 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 24]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 304 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 304 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 304 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 32]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 304 + 40], r3 ; rent_epoch (acct3_base - 8)
+    mov64 r2, 0
+    stxb  [r10 - 304 + 48], r2 ; is_signer=0
+    mov64 r2, 1
+    stxb  [r10 - 304 + 49], r2 ; is_writable=1
+    mov64 r2, 0
+    stxb  [r10 - 304 + 50], r2 ; is_executable=0
+
+    ; SolAccountInfo[2] = taker (acct0, authority)
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 248 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 248 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 8]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 248 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 248 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 248 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 16]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 248 + 40], r3 ; rent_epoch (acct1_base - 8)
+    mov64 r2, 1
+    stxb  [r10 - 248 + 48], r2 ; is_signer=1
+    mov64 r2, 0
+    stxb  [r10 - 248 + 49], r2 ; is_writable=0
+    mov64 r2, 0
+    stxb  [r10 - 248 + 50], r2 ; is_executable=0
+
+    ; CPI call
+    mov64 r1, r10
+    sub64 r1, 184              ; &SolInstruction
+    mov64 r2, r10
+    sub64 r2, 360              ; &SolAccountInfo[0]
+    mov64 r3, 3
+    mov64 r4, 0
+    mov64 r5, 0
+    call sol_invoke_signed_c
+    jne r0, 0, error_cpi_failed
 
     exit
 
@@ -481,6 +656,10 @@ error_taker_ata_owner:
 
 error_vault_ata_mismatch:
     mov64 r0, 0x0C
+    exit
+
+error_maker_atab_owner:
+    mov64 r0, 0x0D
     exit
 
 
