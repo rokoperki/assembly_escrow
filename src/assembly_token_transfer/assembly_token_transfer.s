@@ -370,7 +370,65 @@ make_offer:
     exit
 
 take_offer:
+    ; account count >= 9
     ldxdw r2, [r1 + NUM_ACCOUNTS]
+    jlt r2, 9, error_wrong_accounts_number
+
+    ; taker (acct0) is signer
+    ldxdw r2, [r10 - 8]
+    ldxb r2, [r2 + ACCT_IS_SIGNER]
+    jne r2, 1, error_no_signer
+
+    ; escrow.owner (acct5) == program_id
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_OWNER       ; r2 = &escrow.owner
+    ldxdw r3, [r7 + 0]
+    mov64 r1, r7
+    add64 r1, 8
+    add64 r1, r3               ; r1 = &program_id
+    call cmp32
+    jne r0, 0, error_escrow_owner
+
+    ; escrow.state == Active (0)
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    ldxb r3, [r2 + ES_STATE]
+    jne r3, 0, error_es_state_not_fresh
+
+    ; escrow dlen == ES_SIZE
+    ldxdw r2, [r10 - 48]
+    ldxdw r2, [r2 + ACCT_DLEN]
+    jne r2, ES_SIZE, error_escrow_size
+
+    ; token_ata_b.mint == escrow.mint_b
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_MINT       ; r1 = &token_ata_b.mint_b
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MINT_B             ; r2 = &escrow.mint_b
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; token_ata_b.owner == taker.key
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_OWNER      ; r1 = &token_ata_b.owner
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY              ; r2 = &taker.key
+    call cmp32
+    jne r0, 0, error_taker_ata_owner
+
+    ; vault_ata.key == escrow.vault_ata
+    ldxdw r1, [r10 - 32]
+    add64 r1, ACCT_KEY          ; r1 = &vault_ata.key
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_VAULT_ATA       ; r2 = &escrow.vault_ata
+    call cmp32
+    jne r0, 0, error_vault_ata_mismatch
+
+
     exit
 
 cancel_offer:
@@ -416,6 +474,15 @@ error_maker_ata_owner:
 error_mint_mismatch:
     mov64 r0, 0x0A
     exit
+
+error_taker_ata_owner:
+    mov64 r0, 0x0B
+    exit
+
+error_vault_ata_mismatch:
+    mov64 r0, 0x0C
+    exit
+
 
 ; ── Helpers ───────────────────────────────────────────
 ; cmp32: r1=ptr_a, r2=ptr_b → r0=0 equal, r0=1 not-equal
