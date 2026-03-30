@@ -258,6 +258,306 @@ mod tests {
         );
     }
 
+    struct TakeFixture {
+        program_id: Address,
+        taker: Address,
+        taker_ata_b: Address,
+        maker_ata_b: Address,
+        vault_ata: Address,
+        taker_ata_a: Address,
+        escrow: Address,
+        bump: u8,
+        nonce: u64,
+        mint_a: Address,
+        mint_b: Address,
+        token_prog: Address,
+        system_prog: Address,
+        maker: Address,
+    }
+
+    impl TakeFixture {
+        fn new() -> Self {
+            let program_id_bytes: [u8; 32] =
+                std::fs::read("deploy/assembly_token_transfer-keypair.json").unwrap()[..32]
+                    .try_into()
+                    .unwrap();
+            let program_id = Address::new_from_array(program_id_bytes);
+            let maker = address("524HMdYYBy6TAn4dK5vCcjiTmT2sxV6Xoue5EXrz22Ca");
+            let nonce = 0u64;
+            let (escrow, bump) = Address::find_program_address(
+                &[b"escrow", maker.as_array(), &nonce.to_le_bytes()],
+                &program_id,
+            );
+            Self {
+                program_id,
+                maker,
+                taker:       address("4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM"),
+                taker_ata_b: address("8opHzTAnfzRpPEx21XtnrVTX28YQuCpAjcn1PczScKh"),
+                maker_ata_b: address("CiDwVBFgWV9E5MvXWoLgnEgn2hK7rJikbvfWavzAQz3"),
+                vault_ata:   address("GJRs4FwHtemZ5ZE9x3FNvJ8TMwitKTh21yxdRPqn7v5"),
+                taker_ata_a: address("GcdayuLaLyrdmUu324nahyv33G5poQdLUEZ1nEytDeP"),
+                escrow,
+                bump,
+                nonce,
+                mint_a:      address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
+                mint_b:      address("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"),
+                token_prog:  address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+                system_prog: address("11111111111111111111111111111111"),
+            }
+        }
+
+        fn token_account_data(&self, mint: &Address, owner: &Address, amount: u64) -> Vec<u8> {
+            let mut d = vec![0u8; 165];
+            d[0..32].copy_from_slice(mint.as_array());
+            d[32..64].copy_from_slice(owner.as_array());
+            d[64..72].copy_from_slice(&amount.to_le_bytes());
+            d[108] = 1; // state = initialized
+            d
+        }
+
+        fn escrow_data(&self) -> Vec<u8> {
+            let mut d = vec![0u8; 154];
+            d[0] = 0;            // state = Active
+            d[1] = self.bump;
+            d[2..10].copy_from_slice(&self.nonce.to_le_bytes());
+            d[0x0A..0x2A].copy_from_slice(self.maker.as_array());
+            d[0x2A..0x4A].copy_from_slice(self.mint_a.as_array());
+            d[0x4A..0x6A].copy_from_slice(self.mint_b.as_array());
+            d[0x6A..0x72].copy_from_slice(&1_000_000u64.to_le_bytes());
+            d[0x72..0x7A].copy_from_slice(&2_000_000u64.to_le_bytes());
+            d[0x7A..0x9A].copy_from_slice(self.vault_ata.as_array());
+            d
+        }
+
+        fn accounts(&self) -> Vec<(Address, Account)> {
+            vec![
+                (self.taker,       Account { lamports: 1_000_000_000, data: vec![], owner: self.system_prog, executable: false, ..Default::default() }),
+                (self.taker_ata_b, Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_b, &self.taker, 2_000_000), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.maker_ata_b, Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_b, &self.maker, 0), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.vault_ata,   Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_a, &self.escrow, 1_000_000), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.taker_ata_a, Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_a, &self.taker, 0), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.escrow,      Account { lamports: 1_141_440, data: self.escrow_data(), owner: self.program_id, executable: false, ..Default::default() }),
+                (self.mint_a,      Account { lamports: 1_461_600, data: vec![0u8; 82], owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.mint_b,      Account { lamports: 1_461_600, data: vec![0u8; 82], owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.token_prog,  Account { lamports: 1_141_440, data: vec![], owner: loader_keys::LOADER_V2, executable: true, ..Default::default() }),
+            ]
+        }
+
+        fn instruction(&self) -> Instruction {
+            let metas = vec![
+                AccountMeta::new(self.taker,       true),  // acct0: taker (signer)
+                AccountMeta::new(self.taker_ata_b, false), // acct1: taker_ata_b
+                AccountMeta::new(self.maker_ata_b, false), // acct2: maker_ata_b
+                AccountMeta::new(self.vault_ata,   false), // acct3: vault_ata
+                AccountMeta::new(self.taker_ata_a, false), // acct4: taker_ata_a
+                AccountMeta::new(self.escrow,      false), // acct5: escrow
+                AccountMeta::new_readonly(self.mint_a,     false), // acct6
+                AccountMeta::new_readonly(self.mint_b,     false), // acct7
+                AccountMeta::new_readonly(self.token_prog, false), // acct8
+            ];
+            Instruction::new_with_bytes(self.program_id, &[1u8], metas)
+        }
+
+        fn accounts_modified<F: FnOnce(&mut Vec<(Address, Account)>)>(&self, f: F) -> Vec<(Address, Account)> {
+            let mut accts = self.accounts();
+            f(&mut accts);
+            accts
+        }
+
+        fn mollusk(&self) -> Mollusk {
+            let mut m = Mollusk::new(&self.program_id, "deploy/assembly_token_transfer");
+            let elf = std::fs::read("tests/fixtures/spl_token.so").unwrap();
+            m.program_cache.add_program(&self.token_prog, &loader_keys::LOADER_V2, &elf);
+            m
+        }
+    }
+
+    #[test]
+    fn test_take_offer_success() {
+        let f = TakeFixture::new();
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &f.accounts(),
+            &[Check::success()],
+        );
+    }
+
+    #[test]
+    fn test_take_wrong_accounts_number() {
+        let f = TakeFixture::new();
+        let metas = vec![
+            AccountMeta::new(f.taker, true),
+            AccountMeta::new(f.taker_ata_b, false),
+        ];
+        let accounts = vec![
+            (f.taker, Account { lamports: 1_000_000_000, data: vec![], owner: f.system_prog, executable: false, ..Default::default() }),
+            (f.taker_ata_b, Account { lamports: 2_039_280, data: f.token_account_data(&f.mint_b, &f.taker, 2_000_000), owner: f.token_prog, executable: false, ..Default::default() }),
+        ];
+        f.mollusk().process_and_validate_instruction(
+            &Instruction::new_with_bytes(f.program_id, &[1u8], metas),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x02))],
+        );
+    }
+
+    #[test]
+    fn test_take_no_signer() {
+        let f = TakeFixture::new();
+        let metas = vec![
+            AccountMeta::new(f.taker,       false), // not signer
+            AccountMeta::new(f.taker_ata_b, false),
+            AccountMeta::new(f.maker_ata_b, false),
+            AccountMeta::new(f.vault_ata,   false),
+            AccountMeta::new(f.taker_ata_a, false),
+            AccountMeta::new(f.escrow,      false),
+            AccountMeta::new_readonly(f.mint_a,     false),
+            AccountMeta::new_readonly(f.mint_b,     false),
+            AccountMeta::new_readonly(f.token_prog, false),
+        ];
+        f.mollusk().process_and_validate_instruction(
+            &Instruction::new_with_bytes(f.program_id, &[1u8], metas),
+            &f.accounts(),
+            &[Check::err(ProgramError::Custom(0x03))],
+        );
+    }
+
+    #[test]
+    fn test_take_wrong_escrow_owner() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[5].1.owner = f.system_prog; // escrow owned by system, not program
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x04))],
+        );
+    }
+
+    #[test]
+    fn test_take_escrow_not_active() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[5].1.data[0] = 1; // state = Completed
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x05))],
+        );
+    }
+
+    #[test]
+    fn test_take_wrong_escrow_size() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[5].1.data = vec![0u8; 100]; // wrong size
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x07))],
+        );
+    }
+
+    #[test]
+    fn test_take_taker_atab_wrong_mint() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // taker_ata_b.mint = mint_a instead of mint_b
+            a[1].1.data[0..32].copy_from_slice(f.mint_a.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0A))],
+        );
+    }
+
+    #[test]
+    fn test_take_taker_atab_wrong_owner() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // taker_ata_b.owner = maker instead of taker
+            a[1].1.data[32..64].copy_from_slice(f.maker.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0B))],
+        );
+    }
+
+    #[test]
+    fn test_take_wrong_vault_ata() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // escrow.vault_ata points to a different address
+            a[5].1.data[0x7A..0x9A].copy_from_slice(f.taker_ata_a.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0C))],
+        );
+    }
+
+    #[test]
+    fn test_take_maker_atab_wrong_owner() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // maker_ata_b.owner = taker instead of maker
+            a[2].1.data[32..64].copy_from_slice(f.taker.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0D))],
+        );
+    }
+
+    #[test]
+    fn test_take_maker_atab_wrong_mint() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // maker_ata_b.mint = mint_a instead of mint_b
+            a[2].1.data[0..32].copy_from_slice(f.mint_a.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0A))],
+        );
+    }
+
+    #[test]
+    fn test_take_taker_ataa_wrong_mint() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // taker_ata_a.mint = mint_b instead of mint_a
+            a[4].1.data[0..32].copy_from_slice(f.mint_b.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0A))],
+        );
+    }
+
+    #[test]
+    fn test_take_taker_ataa_wrong_owner() {
+        let f = TakeFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            // taker_ata_a.owner = maker instead of taker
+            a[4].1.data[32..64].copy_from_slice(f.maker.as_array());
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0B))],
+        );
+    }
+
     #[test]
     fn test_make_offer_mint_mismatch() {
         let f = Fixture::new();
