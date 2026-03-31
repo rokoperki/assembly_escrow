@@ -578,4 +578,242 @@ mod tests {
             &[Check::err(ProgramError::Custom(0x0A))],
         );
     }
+
+    struct CancelFixture {
+        program_id: Address,
+        maker: Address,
+        maker_ata_a: Address,
+        vault_ata: Address,
+        escrow: Address,
+        bump: u8,
+        nonce: u64,
+        mint_a: Address,
+        mint_b: Address,
+        token_prog: Address,
+        system_prog: Address,
+    }
+
+    impl CancelFixture {
+        fn new() -> Self {
+            let program_id_bytes: [u8; 32] =
+                std::fs::read("deploy/assembly_token_transfer-keypair.json").unwrap()[..32]
+                    .try_into()
+                    .unwrap();
+            let program_id = Address::new_from_array(program_id_bytes);
+            let maker = address("524HMdYYBy6TAn4dK5vCcjiTmT2sxV6Xoue5EXrz22Ca");
+            let nonce = 0u64;
+            let (escrow, bump) = Address::find_program_address(
+                &[b"escrow", maker.as_array(), &nonce.to_le_bytes()],
+                &program_id,
+            );
+            Self {
+                program_id,
+                maker,
+                maker_ata_a: address("7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2"),
+                vault_ata:   address("GJRs4FwHtemZ5ZE9x3FNvJ8TMwitKTh21yxdRPqn7v5"),
+                escrow,
+                bump,
+                nonce,
+                mint_a:     address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"),
+                mint_b:     address("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"),
+                token_prog: address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+                system_prog: address("11111111111111111111111111111111"),
+            }
+        }
+
+        fn token_account_data(&self, mint: &Address, owner: &Address, amount: u64) -> Vec<u8> {
+            let mut d = vec![0u8; 165];
+            d[0..32].copy_from_slice(mint.as_array());
+            d[32..64].copy_from_slice(owner.as_array());
+            d[64..72].copy_from_slice(&amount.to_le_bytes());
+            d[108] = 1; // initialized
+            d
+        }
+
+        fn escrow_data(&self) -> Vec<u8> {
+            let mut d = vec![0u8; 154];
+            d[0] = 0; // state = Active
+            d[1] = self.bump;
+            d[2..10].copy_from_slice(&self.nonce.to_le_bytes());
+            d[0x0A..0x2A].copy_from_slice(self.maker.as_array());
+            d[0x2A..0x4A].copy_from_slice(self.mint_a.as_array());
+            d[0x4A..0x6A].copy_from_slice(self.mint_b.as_array());
+            d[0x6A..0x72].copy_from_slice(&1_000_000u64.to_le_bytes());
+            d[0x72..0x7A].copy_from_slice(&2_000_000u64.to_le_bytes());
+            d[0x7A..0x9A].copy_from_slice(self.vault_ata.as_array());
+            d
+        }
+
+        fn accounts(&self) -> Vec<(Address, Account)> {
+            vec![
+                (self.maker,      Account { lamports: 1_000_000_000, data: vec![], owner: self.system_prog, executable: false, ..Default::default() }),
+                (self.maker_ata_a, Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_a, &self.maker, 0), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.vault_ata,  Account { lamports: 2_039_280, data: self.token_account_data(&self.mint_a, &self.escrow, 1_000_000), owner: self.token_prog, executable: false, ..Default::default() }),
+                (self.escrow,     Account { lamports: 1_141_440, data: self.escrow_data(), owner: self.program_id, executable: false, ..Default::default() }),
+                (self.token_prog, Account { lamports: 1_141_440, data: vec![], owner: loader_keys::LOADER_V2, executable: true, ..Default::default() }),
+            ]
+        }
+
+        fn instruction(&self) -> Instruction {
+            let metas = vec![
+                AccountMeta::new(self.maker,      true),  // acct0: maker (signer)
+                AccountMeta::new(self.maker_ata_a, false), // acct1: maker_ata_a
+                AccountMeta::new(self.vault_ata,  false), // acct2: vault_ata
+                AccountMeta::new(self.escrow,     false), // acct3: escrow
+                AccountMeta::new_readonly(self.token_prog, false), // acct4
+            ];
+            Instruction::new_with_bytes(self.program_id, &[2u8], metas)
+        }
+
+        fn accounts_modified<F: FnOnce(&mut Vec<(Address, Account)>)>(&self, f: F) -> Vec<(Address, Account)> {
+            let mut accts = self.accounts();
+            f(&mut accts);
+            accts
+        }
+
+        fn mollusk(&self) -> Mollusk {
+            let mut m = Mollusk::new(&self.program_id, "deploy/assembly_token_transfer");
+            let elf = std::fs::read("tests/fixtures/spl_token.so").unwrap();
+            m.program_cache.add_program(&self.token_prog, &loader_keys::LOADER_V2, &elf);
+            m
+        }
+    }
+
+    #[test]
+    fn test_cancel_offer_success() {
+        let f = CancelFixture::new();
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &f.accounts(),
+            &[Check::success()],
+        );
+    }
+
+    #[test]
+    fn test_cancel_wrong_accounts_number() {
+        let f = CancelFixture::new();
+        let metas = vec![
+            AccountMeta::new(f.maker, true),
+            AccountMeta::new(f.maker_ata_a, false),
+        ];
+        let accounts = vec![
+            (f.maker,      Account { lamports: 1_000_000_000, data: vec![], owner: f.system_prog, executable: false, ..Default::default() }),
+            (f.maker_ata_a, Account { lamports: 2_039_280, data: f.token_account_data(&f.mint_a, &f.maker, 0), owner: f.token_prog, executable: false, ..Default::default() }),
+        ];
+        f.mollusk().process_and_validate_instruction(
+            &Instruction::new_with_bytes(f.program_id, &[2u8], metas),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x02))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_no_signer() {
+        let f = CancelFixture::new();
+        let metas = vec![
+            AccountMeta::new(f.maker,       false), // not signer
+            AccountMeta::new(f.maker_ata_a, false),
+            AccountMeta::new(f.vault_ata,   false),
+            AccountMeta::new(f.escrow,      false),
+            AccountMeta::new_readonly(f.token_prog, false),
+        ];
+        f.mollusk().process_and_validate_instruction(
+            &Instruction::new_with_bytes(f.program_id, &[2u8], metas),
+            &f.accounts(),
+            &[Check::err(ProgramError::Custom(0x03))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_wrong_escrow_owner() {
+        let f = CancelFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[3].1.owner = f.system_prog; // escrow owned by system, not program
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x04))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_wrong_escrow_size() {
+        let f = CancelFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[3].1.data = vec![0u8; 100]; // wrong size
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x07))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_escrow_not_active() {
+        let f = CancelFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[3].1.data[0] = 1; // state = Completed
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x05))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_maker_mismatch() {
+        let f = CancelFixture::new();
+        let other = address("4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM");
+        let accounts = f.accounts_modified(|a| {
+            a[3].1.data[0x0A..0x2A].copy_from_slice(other.as_array()); // escrow.maker = other
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0E))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_wrong_vault_ata() {
+        let f = CancelFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[3].1.data[0x7A..0x9A].copy_from_slice(f.maker_ata_a.as_array()); // escrow.vault_ata = wrong key
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0C))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_maker_ata_wrong_mint() {
+        let f = CancelFixture::new();
+        let accounts = f.accounts_modified(|a| {
+            a[1].1.data[0..32].copy_from_slice(f.mint_b.as_array()); // maker_ata_a.mint = mint_b
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x0A))],
+        );
+    }
+
+    #[test]
+    fn test_cancel_maker_ata_wrong_owner() {
+        let f = CancelFixture::new();
+        let other = address("4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM");
+        let accounts = f.accounts_modified(|a| {
+            a[1].1.data[32..64].copy_from_slice(other.as_array()); // maker_ata_a.owner = other
+        });
+        f.mollusk().process_and_validate_instruction(
+            &f.instruction(),
+            &accounts,
+            &[Check::err(ProgramError::Custom(0x09))],
+        );
+    }
 }

@@ -1105,7 +1105,7 @@ cancel_offer:
     jne r0, 0, error_cpi_failed
 
     ; ── escrow state = Cancelled ──────────────────────────
-    ldxdw r2, [r10 - 48]
+    ldxdw r2, [r10 - 32]
     add64 r2, ACCT_DATA
     mov64 r3, STATE_CANCELLED
     stxb  [r2 + ES_STATE], r3
