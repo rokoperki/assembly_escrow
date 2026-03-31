@@ -192,32 +192,29 @@ make_offer:
     ldxdw r2, [r10 - 64]       ; a_amount
     stxdw [r10 - 103], r2
 
-    ; meta[0] maker_ata_a {key_ptr, writable=1, signer=0}
+    ; meta[0] maker_ata_a {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 152
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 152], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 144], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 143], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[1] vault_ata {key_ptr, writable=1, signer=0}
+    ; meta[1] vault_ata {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 136
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 136], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 128], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 127], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[2] maker {key_ptr, writable=0, signer=1}
+    ; meta[2] maker {writable=0, signer=1}
+    mov64 r1, r10
+    sub64 r1, 120
     ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 120], r2      ; key_ptr
-    mov64 r2, 0
-    stxb  [r10 - 112], r2      ; is_writable
-    mov64 r2, 1
-    stxb  [r10 - 111], r2      ; is_signer
+    mov64 r3, 0
+    mov64 r4, 1
+    call fill_meta
 
     ; SolInstruction
     ldxdw r2, [r10 - 56]
@@ -235,82 +232,31 @@ make_offer:
     stxdw [r10 - 176], r2      ; data_len
 
     ; SolAccountInfo[0] = maker_ata_a (acct1)
+    mov64 r1, r10
+    sub64 r1, 384
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 384 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 384 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 16]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 384 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 384 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 384 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 384 + 40], r3 ; rent_epoch (acct2_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 384 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 384 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 384 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 24]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[1] = vault_ata (acct2)
+    mov64 r1, r10
+    sub64 r1, 328
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 328 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 328 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 328 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 328 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 328 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 32]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 328 + 40], r3 ; rent_epoch (acct3_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 328 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 328 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 328 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 32]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[2] = maker (acct0, authority)
+    mov64 r1, r10
+    sub64 r1, 272
     ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 272 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 272 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 8]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 272 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 272 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 272 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 16]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 272 + 40], r3 ; rent_epoch (acct1_base - 8)
-    mov64 r2, 1
-    stxb  [r10 - 272 + 48], r2 ; is_signer=1
-    mov64 r2, 1
-    stxb  [r10 - 272 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 272 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 16]
+    mov64 r4, 1
+    mov64 r5, 1
+    call fill_acct_info
 
     ; CPI call
     mov64 r1, r10
@@ -473,32 +419,29 @@ take_offer:
     ldxdw r2, [r2 + ES_AMOUNT_B]
     stxdw [r10 - 81], r2            ; b_amount
 
-    ; meta[0] taker_ata_b {key_ptr, writable=1, signer=0}
+    ; meta[0] taker_ata_b {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 128
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 128], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 120], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 119], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[1] maker_ata_b {key_ptr, writable=1, signer=0}
+    ; meta[1] maker_ata_b {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 112
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 112], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 104], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 103], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[2] taker {key_ptr, writable=0, signer=1}
+    ; meta[2] taker {writable=0, signer=1}
+    mov64 r1, r10
+    sub64 r1, 96
     ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 96], r2      ; key_ptr
-    mov64 r2, 0
-    stxb  [r10 - 88], r2      ; is_writable
-    mov64 r2, 1
-    stxb  [r10 - 87], r2      ; is_signer
+    mov64 r3, 0
+    mov64 r4, 1
+    call fill_meta
 
     ; SolInstruction
     ldxdw r2, [r10 - 72]
@@ -516,82 +459,31 @@ take_offer:
     stxdw [r10 - 152], r2      ; data_len
 
     ; SolAccountInfo[0] = taker_ata_b (acct1)
+    mov64 r1, r10
+    sub64 r1, 360
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 360 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 360 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 16]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 360 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 360 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 360 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 360 + 40], r3 ; rent_epoch (acct2_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 360 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 360 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 360 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 24]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[1] = maker_ata_b (acct2)
+    mov64 r1, r10
+    sub64 r1, 304
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 304 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 304 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 304 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 304 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 304 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 32]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 304 + 40], r3 ; rent_epoch (acct3_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 304 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 304 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 304 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 32]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[2] = taker (acct0, authority)
+    mov64 r1, r10
+    sub64 r1, 248
     ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 248 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 248 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 8]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 248 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 248 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 8]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 248 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 16]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 248 + 40], r3 ; rent_epoch (acct1_base - 8)
-    mov64 r2, 1
-    stxb  [r10 - 248 + 48], r2 ; is_signer=1
-    mov64 r2, 0
-    stxb  [r10 - 248 + 49], r2 ; is_writable=0
-    mov64 r2, 0
-    stxb  [r10 - 248 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 16]
+    mov64 r4, 1
+    mov64 r5, 0
+    call fill_acct_info
 
     ; taker_ata_b -> maker_ata_b CPI call
     mov64 r1, r10
@@ -612,32 +504,29 @@ take_offer:
     ldxdw r2, [r2 + ES_AMOUNT_A]
     stxdw [r10 - 81], r2            ; a_amount
 
-    ; meta[0] vault_ata {key_ptr, writable=1, signer=0}
+    ; meta[0] vault_ata {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 128
     ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 128], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 120], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 119], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[1] taker_ata_a {key_ptr, writable=1, signer=0}
+    ; meta[1] taker_ata_a {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 112
     ldxdw r2, [r10 - 40]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 112], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 104], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 103], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[2] escrow {key_ptr, writable=0, signer=1}
+    ; meta[2] escrow {writable=0, signer=1}
+    mov64 r1, r10
+    sub64 r1, 96
     ldxdw r2, [r10 - 48]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 96], r2      ; key_ptr
-    mov64 r2, 0
-    stxb  [r10 - 88], r2      ; is_writable
-    mov64 r2, 1
-    stxb  [r10 - 87], r2      ; is_signer
+    mov64 r3, 0
+    mov64 r4, 1
+    call fill_meta
 
     ; SolInstruction
     ldxdw r2, [r10 - 72]
@@ -655,82 +544,31 @@ take_offer:
     stxdw [r10 - 152], r2      ; data_len
 
     ; SolAccountInfo[0] = vault_ata (acct3)
+    mov64 r1, r10
+    sub64 r1, 360
     ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 360 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 360 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 32]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 360 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 360 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 360 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 40]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 360 + 40], r3 ; rent_epoch (acct4_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 360 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 360 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 360 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 40]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[1] = taker_ata_a (acct4)
+    mov64 r1, r10
+    sub64 r1, 304
     ldxdw r2, [r10 - 40]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 304 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 40]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 304 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 40]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 304 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 40]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 304 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 40]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 304 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 48]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 304 + 40], r3 ; rent_epoch (acct5_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 304 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 304 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 304 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 48]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[2] = escrow (acct5, authority)
+    mov64 r1, r10
+    sub64 r1, 248
     ldxdw r2, [r10 - 48]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 248 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 48]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 248 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 48]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 248 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 48]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 248 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 48]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 248 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 56]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 248 + 40], r3 ; rent_epoch (acct6_base - 8)
-    mov64 r2, 1
-    stxb  [r10 - 248 + 48], r2 ; is_signer=1
-    mov64 r2, 0
-    stxb  [r10 - 248 + 49], r2 ; is_writable=0
-    mov64 r2, 0
-    stxb  [r10 - 248 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 56]
+    mov64 r4, 1
+    mov64 r5, 0
+    call fill_acct_info
 
     ; ── seed bytes ────────────────────────────────────────
     ; bump at r10-362
@@ -900,32 +738,29 @@ cancel_offer:
     ldxdw r2, [r2 + ES_AMOUNT_A]
     stxdw [r10 - 55], r2            ; a_amount
 
-    ; meta[0] vault_ata {key_ptr, writable=1, signer=0}
+    ; meta[0] vault_ata {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 104
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 104], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 96], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 95], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[1] maker_ata_a {key_ptr, writable=1, signer=0}
+    ; meta[1] maker_ata_a {writable=1, signer=0}
+    mov64 r1, r10
+    sub64 r1, 88
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 88], r2      ; key_ptr
-    mov64 r2, 1
-    stxb  [r10 - 80], r2      ; is_writable
-    mov64 r2, 0
-    stxb  [r10 - 79], r2      ; is_signer
+    mov64 r3, 1
+    mov64 r4, 0
+    call fill_meta
 
-    ; meta[2] escrow {key_ptr, writable=0, signer=1}
+    ; meta[2] escrow {writable=0, signer=1}
+    mov64 r1, r10
+    sub64 r1, 72
     ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 72], r2      ; key_ptr
-    mov64 r2, 0
-    stxb  [r10 - 64], r2      ; is_writable
-    mov64 r2, 1
-    stxb  [r10 - 63], r2      ; is_signer
+    mov64 r3, 0
+    mov64 r4, 1
+    call fill_meta
 
     ; SolInstruction
     ldxdw r2, [r10 - 40]
@@ -943,82 +778,31 @@ cancel_offer:
     stxdw [r10 - 120], r2      ; data_len
 
     ; SolAccountInfo[0] = vault_ata (acct2)
+    mov64 r1, r10
+    sub64 r1, 328
     ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 328 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 328 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 328 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 328 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 24]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 328 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 32]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 328 + 40], r3 ; rent_epoch (acct3_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 328 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 328 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 328 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 32]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[1] = maker_ata_a (acct1)
+    mov64 r1, r10
+    sub64 r1, 272
     ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 272 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 272 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 16]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 272 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 272 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 16]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 272 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 24]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 272 + 40], r3 ; rent_epoch (acct2_base - 8)
-    mov64 r2, 0
-    stxb  [r10 - 272 + 48], r2 ; is_signer=0
-    mov64 r2, 1
-    stxb  [r10 - 272 + 49], r2 ; is_writable=1
-    mov64 r2, 0
-    stxb  [r10 - 272 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 24]
+    mov64 r4, 0
+    mov64 r5, 1
+    call fill_acct_info
 
     ; SolAccountInfo[2] = escrow (acct3, authority)
+    mov64 r1, r10
+    sub64 r1, 216
     ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_KEY
-    stxdw [r10 - 216 + 0], r2  ; key ptr
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_LAMPORTS
-    stxdw [r10 - 216 + 8], r2  ; lamports ptr
-    ldxdw r2, [r10 - 32]
-    ldxdw r3, [r2 + ACCT_DLEN]
-    stxdw [r10 - 216 + 16], r3 ; data_len value
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_DATA
-    stxdw [r10 - 216 + 24], r2 ; data ptr
-    ldxdw r2, [r10 - 32]
-    add64 r2, ACCT_OWNER
-    stxdw [r10 - 216 + 32], r2 ; owner ptr
-    ldxdw r2, [r10 - 40]
-    ldxdw r3, [r2 - 8]
-    stxdw [r10 - 216 + 40], r3 ; rent_epoch (acct5_base - 8)
-    mov64 r2, 1
-    stxb  [r10 - 216 + 48], r2 ; is_signer=1
-    mov64 r2, 0
-    stxb  [r10 - 216 + 49], r2 ; is_writable=0
-    mov64 r2, 0
-    stxb  [r10 - 216 + 50], r2 ; is_executable=0
+    ldxdw r3, [r10 - 40]
+    mov64 r4, 1
+    mov64 r5, 0
+    call fill_acct_info
 
     ; ── seed bytes ────────────────────────────────────────
     ; bump at r10-330
@@ -1202,4 +986,37 @@ copy32:
     stxdw [r1 + 16], r3
     ldxdw r3, [r2 + 24]
     stxdw [r1 + 24], r3
+    exit
+
+; fill_meta: r1=dst, r2=acct_ptr, r3=is_writable, r4=is_signer
+fill_meta:
+    add64 r2, ACCT_KEY
+    stxdw [r1 + 0], r2
+    stxb  [r1 + 8], r3
+    stxb  [r1 + 9], r4
+    exit
+
+; fill_acct_info: r1=dst, r2=acct_ptr, r3=next_acct_ptr, r4=is_signer, r5=is_writable
+; uses r0 as scratch, does NOT touch r6-r9
+fill_acct_info:
+    mov64 r0, r2
+    add64 r0, ACCT_KEY
+    stxdw [r1 + 0], r0
+    mov64 r0, r2
+    add64 r0, ACCT_LAMPORTS
+    stxdw [r1 + 8], r0
+    ldxdw r0, [r2 + ACCT_DLEN]
+    stxdw [r1 + 16], r0
+    mov64 r0, r2
+    add64 r0, ACCT_DATA
+    stxdw [r1 + 24], r0
+    mov64 r0, r2
+    add64 r0, ACCT_OWNER
+    stxdw [r1 + 32], r0
+    ldxdw r0, [r3 - 8]
+    stxdw [r1 + 40], r0
+    stxb  [r1 + 48], r4
+    stxb  [r1 + 49], r5
+    mov64 r0, 0
+    stxb  [r1 + 50], r0
     exit
