@@ -109,9 +109,9 @@ find_ix_data_done:
     ja    error_invalid_ix
 
 make_offer:
-    ; account count >= 7
+    ; account count == 7
     ldxdw r2, [r1 + NUM_ACCOUNTS]
-    jlt r2, 7, error_wrong_accounts_number
+    jne r2, 7, error_wrong_accounts_number
 
     ; maker (acct0) is signer
     ldxdw r2, [r10 - 8]
@@ -370,9 +370,9 @@ make_offer:
     exit
 
 take_offer:
-    ; account count >= 9
+    ; account count == 9
     ldxdw r2, [r1 + NUM_ACCOUNTS]
-    jlt r2, 9, error_wrong_accounts_number
+    jne r2, 9, error_wrong_accounts_number
 
     ; taker (acct0) is signer
     ldxdw r2, [r10 - 8]
@@ -825,7 +825,73 @@ take_offer:
     exit
 
 cancel_offer:
+
+    ; num_account == 5
     ldxdw r2, [r1 + NUM_ACCOUNTS]
+    jne r2, 5, error_wrong_accounts_number
+
+    ; maker (acct0) is signer
+    ldxdw r2, [r10 - 8]
+    ldxb r2, [r2 + ACCT_IS_SIGNER]
+    jne r2, 1, error_no_signer
+
+    ; escrow.owner == program_id
+    ldxdw r3, [r7 + 0]
+    mov64 r1, r7
+    add64 r1, 8
+    add64 r1, r3               ; r1 = &program_id
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_OWNER       ; r2 = &escrow.owner
+    call cmp32
+    jne r0, 0, error_escrow_owner
+
+    ; escrow.dlen == ES_SIZE
+    ldxdw r2, [r10 - 32]
+    ldxdw r2, [r2 + ACCT_DLEN]
+    jne r2, ES_SIZE, error_escrow_size
+
+    ; escrow.state == active
+    ldxdw r2, [r10 - 32]
+    ldxb r2, [r2 + ACCT_DATA + ES_STATE]
+    jne r2, 0, error_es_state_not_fresh
+
+    ; escrow.maker == maker (acct0)
+    ldxdw r1, [r10 - 8]
+    add64 r1, ACCT_KEY
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MAKER
+    call cmp32
+    jne r0, 0, error_maker_mismatch
+
+    ; vault_ata.key == escrow.vault
+    ldxdw r1, [r10 - 24]
+    add64 r1, ACCT_KEY
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_VAULT_ATA
+    call cmp32
+    jne r0, 0, error_vault_ata_mismatch
+
+    ; maker_ata_a.mint == escrow.mint_a
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_MINT
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MINT_A
+    call cmp32
+    jne r0, 0, error_mint_mismatch
+
+    ; maker_ata_a.owner == maker.key
+    ldxdw r1, [r10 - 16]
+    add64 r1, ACCT_DATA
+    add64 r1, TOKEN_ACCT_OWNER
+    ldxdw r2, [r10 - 8]
+    add64 r2, ACCT_KEY
+    call cmp32
+    jne r0, 0, error_maker_ata_owner
+
     exit
 
 error_invalid_ix:
@@ -878,6 +944,10 @@ error_vault_ata_mismatch:
 
 error_maker_atab_owner:
     mov64 r0, 0x0D
+    exit
+
+error_maker_mismatch:
+    mov64 r0, 0x0E
     exit
 
 
