@@ -645,7 +645,7 @@ take_offer:
     stxdw [r10 - 184], r2      ; program_id ptr (token_program, acct8)
     mov64 r2, r10
     sub64 r2, 128
-    stxdw [r10 - 176], r2      ; accounts_ptr → meta[0] at r10-152
+    stxdw [r10 - 176], r2      ; accounts_ptr → meta[0] at r10-128
     mov64 r2, 3
     stxdw [r10 - 168], r2      ; accounts_len
     mov64 r2, r10
@@ -892,6 +892,225 @@ cancel_offer:
     call cmp32
     jne r0, 0, error_maker_ata_owner
 
+    ; ix data [disc:1, amount:8]
+    mov64 r2, TOKEN_TRANSFER_DISC
+    stxb  [r10 - 56], r2
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    ldxdw r2, [r2 + ES_AMOUNT_A]
+    stxdw [r10 - 55], r2            ; a_amount
+
+    ; meta[0] vault_ata {key_ptr, writable=1, signer=0}
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 104], r2      ; key_ptr
+    mov64 r2, 1
+    stxb  [r10 - 96], r2      ; is_writable
+    mov64 r2, 0
+    stxb  [r10 - 95], r2      ; is_signer
+
+    ; meta[1] maker_ata_a {key_ptr, writable=1, signer=0}
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 88], r2      ; key_ptr
+    mov64 r2, 1
+    stxb  [r10 - 80], r2      ; is_writable
+    mov64 r2, 0
+    stxb  [r10 - 79], r2      ; is_signer
+
+    ; meta[2] escrow {key_ptr, writable=0, signer=1}
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 72], r2      ; key_ptr
+    mov64 r2, 0
+    stxb  [r10 - 64], r2      ; is_writable
+    mov64 r2, 1
+    stxb  [r10 - 63], r2      ; is_signer
+
+    ; SolInstruction
+    ldxdw r2, [r10 - 40]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 152], r2      ; program_id ptr (token_program, acct4)
+    mov64 r2, r10
+    sub64 r2, 104
+    stxdw [r10 - 144], r2      ; accounts_ptr → meta[0] at r10-104
+    mov64 r2, 3
+    stxdw [r10 - 136], r2      ; accounts_len
+    mov64 r2, r10
+    sub64 r2, 56
+    stxdw [r10 - 128], r2      ; data_ptr → ix_data at r10-56
+    mov64 r2, 9
+    stxdw [r10 - 120], r2      ; data_len
+
+    ; SolAccountInfo[0] = vault_ata (acct2)
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 328 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 328 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 24]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 328 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 328 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 24]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 328 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 32]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 328 + 40], r3 ; rent_epoch (acct3_base - 8)
+    mov64 r2, 0
+    stxb  [r10 - 328 + 48], r2 ; is_signer=0
+    mov64 r2, 1
+    stxb  [r10 - 328 + 49], r2 ; is_writable=1
+    mov64 r2, 0
+    stxb  [r10 - 328 + 50], r2 ; is_executable=0
+
+    ; SolAccountInfo[1] = maker_ata_a (acct1)
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 272 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 272 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 16]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 272 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 272 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 16]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 272 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 24]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 272 + 40], r3 ; rent_epoch (acct2_base - 8)
+    mov64 r2, 0
+    stxb  [r10 - 272 + 48], r2 ; is_signer=0
+    mov64 r2, 1
+    stxb  [r10 - 272 + 49], r2 ; is_writable=1
+    mov64 r2, 0
+    stxb  [r10 - 272 + 50], r2 ; is_executable=0
+
+    ; SolAccountInfo[2] = escrow (acct3, authority)
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_KEY
+    stxdw [r10 - 216 + 0], r2  ; key ptr
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_LAMPORTS
+    stxdw [r10 - 216 + 8], r2  ; lamports ptr
+    ldxdw r2, [r10 - 32]
+    ldxdw r3, [r2 + ACCT_DLEN]
+    stxdw [r10 - 216 + 16], r3 ; data_len value
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    stxdw [r10 - 216 + 24], r2 ; data ptr
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_OWNER
+    stxdw [r10 - 216 + 32], r2 ; owner ptr
+    ldxdw r2, [r10 - 40]
+    ldxdw r3, [r2 - 8]
+    stxdw [r10 - 216 + 40], r3 ; rent_epoch (acct5_base - 8)
+    mov64 r2, 1
+    stxb  [r10 - 216 + 48], r2 ; is_signer=1
+    mov64 r2, 0
+    stxb  [r10 - 216 + 49], r2 ; is_writable=0
+    mov64 r2, 0
+    stxb  [r10 - 216 + 50], r2 ; is_executable=0
+
+    ; ── seed bytes ────────────────────────────────────────
+    ; bump at r10-330
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    ldxb  r3, [r2 + ES_BUMP]
+    stxb  [r10 - 330], r3
+
+    ; "escrow" at r10-336..r10-331
+    mov64 r3, 0x65               ; 'e'
+    stxb  [r10 - 336], r3
+    mov64 r3, 0x73               ; 's'
+    stxb  [r10 - 335], r3
+    mov64 r3, 0x63               ; 'c'
+    stxb  [r10 - 334], r3
+    mov64 r3, 0x72               ; 'r'
+    stxb  [r10 - 333], r3
+    mov64 r3, 0x6F               ; 'o'
+    stxb  [r10 - 332], r3
+    mov64 r3, 0x77               ; 'w'
+    stxb  [r10 - 331], r3
+
+    ; nonce at r10-344..r10-337
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    ldxdw r3, [r2 + ES_NONCE]
+    stxdw [r10 - 344], r3
+
+    ; maker key at r10-376..r10-345
+    mov64 r1, r10
+    sub64 r1, 376
+    ldxdw r2, [r10 - 32]
+    add64 r2, ACCT_DATA
+    add64 r2, ES_MAKER
+    call copy32
+
+    ; ── SolSignerSeed[4] ──────────────────────────────────
+    ; seed[0] "escrow": ptr=r10-336, len=6
+    mov64 r2, r10
+    sub64 r2, 336
+    stxdw [r10 - 472], r2
+    mov64 r2, SEED_ESCROW_LEN
+    stxdw [r10 - 464], r2
+
+    ; seed[1] maker: ptr=r10-376, len=32
+    mov64 r2, r10
+    sub64 r2, 376
+    stxdw [r10 - 456], r2
+    mov64 r2, SEED_PUBKEY_LEN
+    stxdw [r10 - 448], r2
+
+    ; seed[2] nonce: ptr=r10-337, len=8
+    mov64 r2, r10
+    sub64 r2, 344
+    stxdw [r10 - 440], r2
+    mov64 r2, SEED_NONCE_LEN
+    stxdw [r10 - 432], r2
+
+    ; seed[3] bump: ptr=r10-330, len=1
+    mov64 r2, r10
+    sub64 r2, 330
+    stxdw [r10 - 424], r2
+    mov64 r2, SEED_BUMP_LEN
+    stxdw [r10 - 416], r2
+
+
+    ; ── SolSignerSeeds ────────────────────────────────────
+    mov64 r2, r10
+    sub64 r2, 472
+    stxdw [r10 - 488], r2        ; seeds_ptr → seed[0]
+    mov64 r2, 4
+    stxdw [r10 - 480], r2        ; seeds_len
+
+    ; ── CPI call ──────────────────────────────────────────
+    mov64 r1, r10
+    sub64 r1, 152                ; &SolInstruction
+    mov64 r2, r10
+    sub64 r2, 328                ; &SolAccountInfo[0]
+    mov64 r3, 3
+    mov64 r4, r10
+    sub64 r4, 488                ; &SolSignerSeeds
+    mov64 r5, 1
+    call sol_invoke_signed_c
+    jne r0, 0, error_cpi_failed
+
+    ; ── escrow state = Cancelled ──────────────────────────
+    ldxdw r2, [r10 - 48]
+    add64 r2, ACCT_DATA
+    mov64 r3, STATE_CANCELLED
+    stxb  [r2 + ES_STATE], r3
+
+    mov64 r0, 0
     exit
 
 error_invalid_ix:
